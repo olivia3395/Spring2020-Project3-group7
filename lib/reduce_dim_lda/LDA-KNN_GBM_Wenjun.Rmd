@@ -1,5 +1,5 @@
 ---
-title: "LDA-KNN GBM Adaboost & Random Forest"
+title: "LDA-KNN GBM Adaboost SVM XGBoost RF"
 output:
   html_document:
     df_print: paged
@@ -166,14 +166,18 @@ score_lda<-as.matrix(dat_train_leftmid[,-1587]) %*% a$scaling #new 21 variables
 
 test_score_lda<-as.matrix(dat_test_leftmid[,-1587]) %*% a$scaling
 
-lda_data=rbind(score_lda,test_score_lda)
+lda_data=score_lda
 
-lda_class=c(dat_train_leftmid[,1587],dat_test_leftmid[,1587])
+lda_class=dat_train_leftmid[,1587]
 
+lda_test_data=test_score_lda
+
+lda_test_class=dat_test_leftmid[,1587]
 
 
 ## Now we get data with reduced feature. We can proceed to CLASSIFICATION
 ```
+
 
 ```{r}
 ###############################################################################################
@@ -182,42 +186,6 @@ lda_class=c(dat_train_leftmid[,1587],dat_test_leftmid[,1587])
 
 ### Step 4.1: Train KNN model with training features and responses
 
-# knn_1=knn3Train(score_lda,test=test_score_lda,cl=dat_train_leftmid[,1587],k=1)
-# accuray_1=sum(knn_1==dat_test_leftmid[,1587])/500
-# 
-# knn_3=knn3Train(score_lda,test=test_score_lda,cl=dat_train_leftmid[,1587],k=3)
-# accuray_3=sum(knn_3==dat_test_leftmid[,1587])/500
-# 
-# knn_5=knn3Train(score_lda,test=test_score_lda,cl=dat_train_leftmid[,1587],k=5)
-# accuray_5=sum(knn_5==dat_test_leftmid[,1587])/500
-# 
-# knn_7=knn3Train(score_lda,test=test_score_lda,cl=dat_train_leftmid[,1587],k=7)
-# accuray_7=sum(knn_7==dat_test_leftmid[,1587])/500
-# 
-# knn_9=knn3Train(score_lda,test=test_score_lda,cl=dat_train_leftmid[,1587],k=9)
-# accuray_9=sum(knn_9==dat_test_leftmid[,1587])/500
-# 
-# knn_21=knn3Train(score_lda,test=test_score_lda,cl=dat_train_leftmid[,1587],k=21)
-# accuray_21=sum(knn_21==dat_test_leftmid[,1587])/500
-# 
-# knn_31=knn3Train(score_lda,test=test_score_lda,cl=dat_train_leftmid[,1587],k=31)
-# accuray_31=sum(knn_31==dat_test_leftmid[,1587])/500
-# 
-# knn_51=knn3Train(score_lda,test=test_score_lda,cl=dat_train_leftmid[,1587],k=51)
-# accuray_51=sum(knn_51==dat_test_leftmid[,1587])/500
-# 
-# knn_81=knn3Train(score_lda,test=test_score_lda,cl=dat_train_leftmid[,1587],k=81)
-# accuray_81=sum(knn_81==dat_test_leftmid[,1587])/500
-# 
-# knn_121=knn3Train(score_lda,test=test_score_lda,cl=dat_train_leftmid[,1587],k=121)
-# accuray_121=sum(knn_121==dat_test_leftmid[,1587])/500
-# 
-# knn_151=knn3Train(score_lda,test=test_score_lda,cl=dat_train_leftmid[,1587],k=151)
-# accuray_151=sum(knn_151==dat_test_leftmid[,1587])/500
-# 
-# knn_201=knn3Train(score_lda,test=test_score_lda,cl=dat_train_leftmid[,1587],k=201)
-# accuray_201=sum(knn_201==dat_test_leftmid[,1587])/500
-
 ## Cross Validation
 tuning_p=c(1,3,5,7,9,21,31,41,51,61,71,81,121,151,201)
 
@@ -225,23 +193,25 @@ n_p=length(tuning_p)
 
 KNN_result=matrix(0,K,n_p)
 
-cv.k=createFolds(1:2500,K)
+set.seed(2020)
+
+cv.k=createFolds(1:2000,K)
 
 for (j in 1:K){
   
-  dat_test_cv=lda_data[cv.k[[j]],]
+  dat_valid_cv=lda_data[cv.k[[j]],]
   
   dat_train_cv=lda_data[-cv.k[[j]],]
   
-  dat_test_class=lda_class[cv.k[[j]]]
+  dat_valid_class=lda_class[cv.k[[j]]]
   
   dat_train_class=lda_class[-cv.k[[j]]]
   
   for (i in 1:n_p){
     
-    model=knn3Train(dat_train_cv,test=dat_test_cv,cl=dat_train_class,k=tuning_p[i])
+    model=knn3Train(dat_train_cv,test=dat_valid_cv,cl=dat_train_class,k=tuning_p[i])
     
-    KNN_result[j,i]=sum(model==dat_test_class)/500
+    KNN_result[j,i]=sum(model==dat_valid_class)/500
     
   }
   
@@ -253,9 +223,15 @@ names(KNN_result)=paste("K=",tuning_p)
 
 colMeans(KNN_result)
 
-# From the table we can see the best K is 71, accuracy = 0.7516
+# From the table we can see the best K is 61
 
-Best_K=71 
+Best_K=61
+
+knn_best=knn3Train(lda_data,test=lda_test_data,cl=lda_class,k=61)
+
+test_accu=sum(knn_best==lda_test_class)/500
+
+test_accu
 
 ```
 
@@ -270,48 +246,26 @@ Best_K=71
 #install.packages("gbm")
 
 library(gbm)
-# # 加载包和数据
-# install.packages("gbm")
-# install.packages("mlbench")
-# library(gbm)
-# library(mlbench)
-# data(PimaIndiansDiabetes2,package='mlbench')
-# # 将响应变量转为0-1格式
-# data <- PimaIndiansDiabetes2
-# data$diabetes <- as.numeric(data$diabetes)
-# data <- transform(data,diabetes=diabetes-1)
-# # 使用gbm函数建模
-# model <- gbm(diabetes~.,data=data,shrinkage=0.01,
-#              distribution='bernoulli',cv.folds=5,
-#              n.trees=3000,verbose=F)
-# # 用交叉检验确定最佳迭代次数
-# best.iter <- gbm.perf(model,method='cv')
-# best.iter
-# summary(model,best.iter)
-# plot.gbm(model,1,best.iter)
-# # 用caret包观察预测精度
-# library(caret)
-# data <- PimaIndiansDiabetes2
-# fitControl <- trainControl(method = "cv", number = 5,returnResamp = "all")
-# model2 <- train(diabetes~., data=data,method='gbm',distribution='bernoulli',trControl = fitControl,verbose=F,tuneGrid = data.frame(.n.trees=best.iter,.shrinkage=0.01,.interaction.depth=1))
-# model2
+
 lda_data_class=cbind(lda_data,lda_class)
+
 lda_data_class=as.data.frame(lda_data_class)
-names(lda_data_class)
+
 model_gbm=gbm(lda_class~.,data=lda_data_class,shrinkage = 0.01,distribution = 'multinomial',cv.folds =5, n.trees=3000, verbose = F)
+
 best.iter <- gbm.perf(model_gbm,method='cv')
+
+# best iteration = 1975
+
 summary(model_gbm,best.iter)
 
-#extract 10 random 500 test case
-gbm_result=rep(0,10)
-for (i in 1:10){
-  index=sample(1:2500,500)
-  test=lda_data_class[index,]
-  pred_gbm=predict.gbm(model_gbm,test,n.trees=1948, type="response")
-  gbm_result[i]=sum(apply(pred_gbm,1,which.max)==test[,22])/500
-}
-mean(gbm_result)
-##0.9034
+pred_gbm=predict.gbm(model_gbm,as.data.frame(lda_test_data),n.trees=1975, type="response")
+
+gbm_accu=sum(apply(pred_gbm,1,which.max)==lda_test_class)/500
+
+gbm_accu
+
+##0.372
 ```
 
 ```{r}
@@ -320,17 +274,34 @@ mean(gbm_result)
 ###############################################################################################
 ### Step 4.3: Train Adaboost model with training features and responses
 
+install.packages("adabag")
+
+library(adabag)
+
+library(tidyverse)
+
+lda_data_class=lda_data_class%>%
+
+    mutate(lda_class=as.factor(lda_class))
 
 
+ada=boosting(lda_class~.,lda_data_class,boos=T,mfinal=5)
+
+pred_ada=predict.boosting(ada,as.data.frame(lda_test_data),newmfinal = 3)
+
+ada_accu=sum(pred_ada$class==lda_test_class)/500
+
+ada_accu
+
+## The accuray of Adaboost is 0.266
 
 ```
-
 ```{r}
 ###############################################################################################
-###############################---------Random Forest-------###################################
+##################################---------XGBoost-------######################################
 ###############################################################################################
-### Step 4.1: Train KNN model with training features and responses
 
+### Step 4.4: Train XGBoost model with training features and responses
 
 
 
@@ -341,10 +312,55 @@ mean(gbm_result)
 ###############################################################################################
 ####################################---------SVM-------########################################
 ###############################################################################################
-### Step 4.1: Train KNN model with training features and responses
+
+### Step 4.5: Train SVM model with training features and responses
+
+library(e1071)
+
+model_svm <- svm(lda_class~., data = lda_data_class, kernal = "radial", cost = 1)
+
+test.svm.pred <- as.numeric(predict(model_svm, lda_test_data))
+
+svm_accu=mean(test.svm.pred == lda_test_class)
+
+svm_accu
+
+#0.376
+
+```
+
+```{r}
+###############################################################################################
+##################################---------Logistic-------#####################################
+###############################################################################################
+### Step 4.6: Train Logistic model with training features and responses
+
+#install.packages("mlogit")
+
+library(mlogit)
+
+mlogit(lda_class~.,lda_data_class)
+
+model_logi=nnet::multinom(lda_class~.,lda_data_class)
+
+logi_accu=sum(predict(model_logi,lda_test_data)==lda_test_class)/500
+
+logi_accu
+
+## The accuracy of Logistics model is 0.38
+
+```
+
+
+```{r}
+###############################################################################################
+###############################---------Random Forest-------###################################
+###############################################################################################
+### Step 4.7: Train RF model with training features and responses
 
 
 
 
 ```
+
 
