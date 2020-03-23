@@ -1,0 +1,77 @@
+---
+title: "xgboost"
+author: "Ziyang"
+date: 
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###xgboost
+```{r}
+load("../output/feature_train1.Rdata")
+load("../output/feature_test1.Rdata")
+train1_x<-data.frame(dat_train[,1:1892])
+train1_y<-data.frame(dat_train$emotion_idx)
+test1_x<-data.frame(dat_test[,1:1892])
+test1_y<-data.frame(dat_test$emotion_idx)
+setDT(train1_y) 
+setDT(test1_y)
+setDT(train1_x) 
+setDT(test1_x)
+new.train <- model.matrix(~.+0,data = train1_x,with=F) 
+new.test <- model.matrix(~.+0,data = test1_x,with=F) 
+dim(new.train)
+train.label <- as.numeric(train1_y$dat_train.emotion_idx)-1
+test.label <- as.numeric(test1_y$dat_test.emotion_idx)-1
+xgb.train <- xgb.DMatrix(data=new.train,label=train.label)
+xgb.test <- xgb.DMatrix(data=new.test,label=test.label)
+# Define the parameters for xgb classification
+params <- list(
+  booster="gbtree",
+  eta=0.3,
+  max_depth=5,
+  gamma=5,
+  subsample=1,
+  colsample_bytree=1,
+  objective="multi:softprob",
+  eval_metric="mlogloss",
+  num_class=22
+)
+xgbcv <- xgb.cv( params = params, data = xgb.train, nrounds = 500, nfold = 5, showsd = T, stratified = T, print_every_n = 10, early_stop_round = 20, maximize = F)
+
+# Train the XGBoost classifer
+xgb.fit=xgb.train(
+  params=params,
+  data=xgb.train,
+  nrounds=300,
+  nthreads=1,
+  early_stopping_rounds=10,
+  watchlist=list(val1=xgb.train,val2=xgb.test),
+  verbose=0
+)
+# Review the final model and results
+#xgb.fit
+# Predict with the test data
+xgb.pred <- predict(xgb.fit,new.test,reshape=T)
+xgb.pred <- as.data.frame(xgb.pred)
+colnames(xgb.pred) <- levels(test1_y$dat_test.emotion_idx)
+# Use the predicted label with the highest probability
+xgb.pred$prediction <- apply(xgb.pred,1,function(x) colnames(xgb.pred)[which.max(x)])
+xgb.pred$label <- levels(test1_y$dat_test.emotion_idx)[test.label+1]
+# Calculate the  accuracy
+sum(xgb.pred$prediction==xgb.pred$label)/nrow(xgb.pred)
+
+# Predict with the train data
+xgb.pred.train <- predict(xgb.fit,new.train,reshape=T)
+xgb.pred.train <- as.data.frame(xgb.pred.train)
+colnames(xgb.pred.train) <- levels(train1_y$dat_train.emotion_idx)
+# Use the predicted label with the highest probability
+xgb.pred.train$prediction <- apply(xgb.pred.train,1,function(x) colnames(xgb.pred.train)[which.max(x)])
+xgb.pred.train$label <- levels(train1_y$dat_train.emotion_idx)[train.label+1]
+# Calculate the train accuracy
+sum(xgb.pred.train$prediction==xgb.pred.train$label)/nrow(xgb.pred.train)
+xgb.pred.train
+```

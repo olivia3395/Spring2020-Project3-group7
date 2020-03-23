@@ -1,0 +1,115 @@
+---
+title: "Xgboost"
+author: "Ziyang Zhang"
+date: "3/22/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("~/Desktop/Spring2020-Project3-ads-spring2020-project3-group7/doc/")
+load("../output/feature_pca_train.RData")
+load("../output/feature_pca_test.RData")
+```
+
+
+
+
+```{r}
+xgboosttrain.model.start = proc.time()
+trainset1=as.matrix(dat_train_pca_final[,1:50])
+trainset1=Matrix(trainset1,sparse=T) 
+m.cv<-xgboost(data=trainset1,
+                  label=as.numeric(dat_train_pca_final[,51])-1,
+                  eta = 0.1,
+                  max_depth = 15, 
+                  nrounds=25, 
+                  subsample = 0.5,
+                  colsample_bytree = 0.5,
+                  seed = 1,
+                  #eval_metric = "merror",
+                  objective = "multi:softmax",
+                  num_class = 22,
+                  nthread = 3)
+
+xgboosttrain.model.end = proc.time()
+print(xgboosttrain.model.end-xgboosttrain.model.start)
+
+```
+
+
+```{r}
+xgboosttrain.model.start = proc.time()
+trainset1=as.matrix(dat_train_pca_final[,1:50])
+trainset1=Matrix(trainset1,sparse=T) 
+m.cv<-xgboost(data=trainset1,
+                  label=as.numeric(dat_train_pca_final[,51])-1,
+                  eta = 0.1,
+                  max_depth = 15, 
+                  nrounds=25, 
+                  subsample = 0.5,
+                  colsample_bytree = 0.5,
+                  seed = 1,
+                  #eval_metric = "merror",
+                  objective = "multi:softmax",
+                  num_class = 22,
+                  nthread = 3)
+
+xgboosttrain.model.end = proc.time()
+print(xgboosttrain.model.end-xgboosttrain.model.start)
+
+```
+##xgboost testing time 
+```{r}
+xgboosttest.model.start = proc.time()
+pred2<- predict(m.cv, newdata =as.matrix(dat_test_pca_final[,1:50]))+1
+pred2
+accur2= mean(pred2 == dat_test_pca_final$emotion_idx)
+accur2
+xgboosttest.model.end = proc.time()
+print(xgboosttest.model.end-xgboosttest.model.start)
+```
+
+
+```{r}
+# rename the label column
+train_xgb=dat_train_pca_final
+test_xgb=dat_test_pca_final
+names(train_xgb)[51] <- "label"
+names(test_xgb)[51] <- "label"
+# factorize label column
+train_xgb$label <- factor(train_xgb$label)
+test_xgb$label <- factor(test_xgb$label)
+
+
+# Here we use 10-fold cross-validation, repeating twice, and using random search for tuning hyper-parameters.
+fitControl <- trainControl(method = "repeatedcv", number = 10, repeats =2,  search = "random", allowParallel = TRUE)
+
+# train a xgbTree model using caret::train
+train_xgb_dat<-train_xgb[,1:50]
+
+xgb_model <- caret::train(x = train_xgb_dat, y = train_xgb$label,
+                   trControl = fitControl,method = "xgbLinear",
+                   verbose = TRUE)
+
+print(xgb_model$results) # Model results
+
+# Prediction
+#y_pred_xgb <- predict(xgb_model, test_xgb)
+
+
+# calculate accuracy
+accu_xgb <- max(xgb_model$results$Accuracy)*100
+cat("The accuracy of model on selected feature:", "is", round(accu_xgb,2), "%.\n")
+# caret::confusionMatrix(y_pred_xgb, test_xgb$label)
+
+
+train.model.end = proc.time()
+
+#time for training the model
+print(train.model.end - train.model.start)
+
+```

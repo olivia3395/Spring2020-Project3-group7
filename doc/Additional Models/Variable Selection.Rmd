@@ -1,0 +1,98 @@
+---
+title: "Variable Selection"
+output: html_document
+---
+
+```{r}
+load("../output/feature_train_sel.RData")
+```
+
+```{r}
+library(leaps)
+best_fit <- regsubsets(emotion_idx ~ ., data = dat_train, method = "exhaustive")
+```
+
+# Forward Selection
+```{r}
+#Run model
+library(leaps)
+forw_fit <- regsubsets(emotion_idx ~ ., data = dat_train, method="forward", nvmax= (ncol(dat_train)-1))
+forw_summary <- summary(forw_fit)
+
+#Identify model with best BIC
+forw_bic <- forw_bic$bic
+forw_best_bic <- which(bic==min(forw_bic))
+
+library(dplyr)
+#Extract features of best model
+forw_feat <- for_summary$which[forw_best_bic,]
+forw_list <- forw_feat[forw_feat==T]
+forw_names <- names(forw_list)[-1]
+save(forw_names, file="../output/Forward_features.RData")
+```
+
+
+# Backwards selection
+```{r}
+back_fit <- regsubsets(emotion_idx ~ ., data = dat_train, method="backward", nvmax= (ncol(dat_train)-1))
+back_summary <- summary(back_fit)
+
+#Identify model with best BIC
+back_bic <- back_summary$bic
+best_back_bic <- which(back_bic==min(back_bic))
+
+#Extract features of best model
+back_feat <- back_summary$which[best_back_bic,]
+back_list <- back_feat[back_feat==T]
+back_names <- names(back_list)[-1]
+save(back_names, file="../output/Backward_features.RData")
+```
+
+
+# Random Forest
+Run a random forest and evaluate the most relevant variables
+```{r}
+#Fast model
+library(randomForest)
+rf_fit <- randomForest(emotion_idx ~ ., data = dat_train, importance=T)
+rf_feat <- as.data.frame(importance(rf_fit))
+rf_names <- rownames(rf_feat[order(rf_feat$MeanDecreaseAccuracy), ])[1:length(forward_names)]
+save(rf_names, file="../output/RandomForest_features.RData")
+#I selected the most important n featuers, where n is the length of the features given by forward selection. This can allow good comparison between models for now. 
+
+#Slow, better model. It is expected to take around 30+ hours
+#library(VSURF)
+#library(dplyr)
+#rf_fit1 <- VSURF(x = select(dat_train, -emotion_idx), y = dat_train$emotion_idx, nmin=20)
+```
+
+# Lasso
+Shrinks the coefficient estimates towards zero. Need to use cross validation to select the tuning parameter $\lambda$. 
+```{r}
+library(glmnet)
+registerDoParallel()
+x <- as.matrix(select(dat_train, -emotion_idx))
+y <- dat_train$emotion_idx
+
+
+lasso_cv <- cv.glmnet(x, y, alpha = 1, family="multinomial", nfold=10, type.measure = "class", parallel=T)
+lasso_feat <- as.matrix(predict(lasso_cv, type = "coefficients", s = lasso_cv$lambda.1se))
+```
+
+
+```{r}
+bestlam=cv.out$lambda.min
+out=glmnet(x,y, alpha=1, lambda=lambda_values, family = "multinomial")
+lasso.coef = predict(out,type="coefficients", s=bestlam)
+lasso.coef[lasso.coef!=0]
+```
+
+
+```{r}
+x1 <- model.matrix(target ~., train)[,-1]
+y1 <- train$target
+lam.grid <- 10^seq(10, -2, length = 100)
+lasso.cv <- cv.glmnet(x1, y1, alpha=1, lambda=lam.grid, family="binomial")
+lasso.vars <- as.matrix(predict(lasso.cv, type = "coefficients", s = lasso.cv$lambda.min))
+lasso.names <- names(lasso.vars[lasso.vars!=0,])[-1]
+```

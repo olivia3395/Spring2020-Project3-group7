@@ -1,0 +1,126 @@
+---
+title: "Kpca"
+author: "Ziyang Zhang"
+date: "3/22/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, echo=F}
+if(!require("EBImage")){
+  source("https://bioconductor.org/biocLite.R")
+  biocLite("EBImage")
+}
+if(!require("R.matlab")){
+  install.packages("R.matlab")
+}
+if(!require("readxl")){
+  install.packages("readxl")
+}
+
+if(!require("dplyr")){
+  install.packages("dplyr")
+}
+if(!require("readxl")){
+  install.packages("readxl")
+}
+
+if(!require("ggplot2")){
+  install.packages("ggplot2")
+}
+
+if(!require("caret")){
+  install.packages("caret")
+}
+
+if(!require("MASS")){
+  install.packages("MASS")
+}
+
+if(!require("parallel")){
+  install.packages("parallel")
+}
+
+if(!require("data.table")){
+  install.packages("data.table")
+}
+
+if(!require("gbm")){
+  install.packages("gbm")
+}
+
+if(!require("e1071")){
+  install.packages("e1071")
+}
+if(!require("xgboost")){
+  install.packages("xgboost")
+}
+
+if(!require("caret")){
+  install.packages("caret")
+}
+if(!require("caTools")){
+  install.packages("caTools")
+}
+if(!require("kernlab")){
+  install.packages("kernlab")
+}
+if(!require("Matrix")){
+  install.packages("Matrix")
+}
+
+
+library(R.matlab)
+library(readxl)
+library(dplyr)
+library(EBImage)
+library(ggplot2)
+library(caret)
+library(MASS)
+library(data.table)
+library(parallel)
+library(gbm)
+library(e1071)
+library(xgboost)
+library(caret)
+library(caTools)
+library(kernlab)
+library(Matrix)
+```
+
+### Load datasets
+
+```{r}
+setwd("~/Desktop/Spring2020-Project3-ads-spring2020-project3-group7/doc/")
+load("../output/feature_train.RData")
+load("../output/feature_test.RData")
+```
+
+###kernel pca(nonlinear method)
+
+# Kernel Principal Component Analysis(KPCA) 
+# can realize non-linear dimensionality reduction of data and 
+# is used to process linear inseparable data sets.
+
+```{r}
+kpca = kpca(~.,data =dat_train[,-1514],kernel = "laplacedot", kpar=list(sigma=0.2),features = 200)
+pcv(kpca)
+train_kpca <- data.frame(pcv(kpca)) 
+train_kpca 
+
+train_index<- dat_train[1514]
+dat_train_kpca <- cbind(train_kpca, train_index)
+
+
+test_kpca = data.frame(predict(kpca, dat_test[,-1514]))
+
+
+test_index<- dat_test[1514]
+dat_test_kpca <- cbind(test_kpca, test_index)
+
+names(dat_test_kpca)=names(dat_train_kpca)
+dat_test_kpca
+```

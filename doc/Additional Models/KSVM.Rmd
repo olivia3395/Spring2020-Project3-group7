@@ -1,0 +1,38 @@
+---
+title: "KSVM"
+author: "Ziyang Zhang"
+date: "3/22/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("~/Desktop/Spring2020-Project3-ads-spring2020-project3-group7/doc/")
+load("../output/feature_pca_train.RData")
+load("../output/feature_pca_test.RData")
+
+
+```
+
+#KSVM training time
+```{r}
+ksvmtrain.model.start = proc.time()
+ksvm_model=ksvm(as.matrix(dat_train_pca_final[,1:50]),factor(dat_train_pca_final[,51]),scale = c(),
+                type = "C-svc",kernel = 'vanilladot',C=10)
+ksvmtrain.model.end = proc.time()
+print(ksvmtrain.model.end-ksvmtrain.model.start)
+
+```
+
+#KSVM test time
+```{r}
+ksvmtest.model.start = proc.time()
+pred1<- predict(ksvm_model, newdata =dat_test_pca_final[,1:50])
+accur1= mean(pred1 == dat_test_pca_final$emotion_idx)
+accur1
+ksvmtest.model.end = proc.time()
+print(ksvmtest.model.end-ksvmtest.model.start)
+```

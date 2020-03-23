@@ -1,0 +1,413 @@
+---
+title: "LDA-KNN/GBM/Adaboost/SVM/RF"
+author: "Wenjun Yang wy2347"
+date: "3/18/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, echo=F}
+if(!require("EBImage")){
+  source("https://bioconductor.org/biocLite.R")
+  biocLite("EBImage")
+}
+if(!require("R.matlab")){
+  install.packages("R.matlab")
+}
+if(!require("readxl")){
+  install.packages("readxl")
+}
+
+if(!require("dplyr")){
+  install.packages("dplyr")
+}
+if(!require("readxl")){
+  install.packages("readxl")
+}
+
+if(!require("ggplot2")){
+  install.packages("ggplot2")
+}
+
+if(!require("caret")){
+  install.packages("caret")
+}
+
+if(!require("MASS")){
+  install.packages("MASS")
+}
+
+if(!require("parallel")){
+  install.packages("parallel")
+}
+
+if(!require("data.table")){
+  install.packages("data.table")
+}
+
+if(!require("gbm")){
+  install.packages("gbm")
+}
+
+if(!require("e1071")){
+  install.packages("e1071")
+}
+if(!require("xgboost")){
+  install.packages("xgboost")
+}
+
+if(!require("caret")){
+  install.packages("caret")
+}
+if(!require("caTools")){
+  install.packages("caTools")
+}
+if(!require("kernlab")){
+  install.packages("kernlab")
+}
+if(!require("Matrix")){
+  install.packages("Matrix")
+}
+if(!require("adabag")){
+  install.packages("adabag")
+}
+if(!require("tidyverse")){
+  install.packages("tidyvesrse")
+}
+
+
+library(R.matlab)
+library(readxl)
+library(dplyr)
+library(EBImage)
+library(ggplot2)
+library(caret)
+library(MASS)
+library(data.table)
+library(parallel)
+library(gbm)
+library(e1071)
+library(xgboost)
+library(caret)
+library(caTools)
+library(kernlab)
+library(Matrix)
+library(adabag)
+library(tidyverse)
+```
+
+
+
+```{r exp_setup}
+setwd("~/Desktop/Spring2020-Project3-ads-spring2020-project3-group7/doc/")
+load("../output/fiducial_pt_list.RData")
+```
+
+### Load feature
+
+```{r}
+setwd("~/Desktop/Spring2020-Project3-ads-spring2020-project3-group7/doc/")
+load("../output/feature_train_base.Rdata")
+load("../output/feature_test_base.Rdata")
+```
+
+```{r}
+setwd("~/Desktop/Spring2020-Project3-ads-spring2020-project3-group7/doc/")
+load("../output/feature_train.RData")
+load("../output/feature_test.RData")
+```
+
+### Dimension Reduction
+```{r}
+a<-lda(dat_train[,-1514],grouping=dat_train$emotion_idx)
+
+score_lda<-as.matrix(dat_train[,-1514]) %*% a$scaling #new 21 variables
+
+test_score_lda<-as.matrix(dat_test[,-1514]) %*% a$scaling
+
+lda_data=score_lda
+
+lda_class=as.factor(dat_train[,1514])
+
+lda_test_data=test_score_lda
+
+lda_test_class=as.factor(dat_test[,1514])
+
+lda_data_class=cbind(lda_data,lda_class)
+
+lda_data_class=as.data.frame(lda_data_class)
+
+lda_data_class=lda_data_class%>%
+  
+mutate(lda_class=as.factor(lda_class))
+
+```
+### Now we get data with reduced feature. We can proceed to CLASSIFICATION
+
+### KNN
+```{r}
+###############################################################################################
+######################################---------KNN-------######################################
+###############################################################################################
+
+### Step 4.1: Train KNN model with training features and responses
+
+## Cross Validation
+
+base.train.model.start = proc.time()
+
+tuning_p=c(1,3,5,7,9,21,31,41,51,61,71,81,121,151,201)
+
+n_p=length(tuning_p)
+
+KNN_result=matrix(0,K,n_p)
+
+set.seed(2020)
+
+cv.k=createFolds(1:2000,K)
+
+for (j in 1:K){
+  
+  dat_valid_cv=lda_data[cv.k[[j]],]
+  
+  dat_train_cv=lda_data[-cv.k[[j]],]
+  
+  dat_valid_class=lda_class[cv.k[[j]]]
+  
+  dat_train_class=lda_class[-cv.k[[j]]]
+  
+  for (i in 1:n_p){
+    
+    model=knn3Train(dat_train_cv,test=dat_valid_cv,cl=dat_train_class,k=tuning_p[i])
+    
+    KNN_result[j,i]=sum(model==dat_valid_class)/500
+    
+  }
+  
+}
+
+KNN_result=as.data.frame(KNN_result)
+
+names(KNN_result)=paste("K=",tuning_p)
+
+colMeans(KNN_result)
+
+# From the table we can see the best K is 61
+
+Best_K=61
+
+base.train.model.end = proc.time()
+
+print(base.train.model.end - base.train.model.start)
+
+base.test.model.start = proc.time()
+
+knn_best=knn3Train(lda_data,test=lda_test_data,cl=lda_class,k=61)
+
+base.test.model.end = proc.time()
+
+print(base.test.model.end - base.test.model.start)
+
+test_accu=sum(knn_best==lda_test_class)/500
+
+test_accu
+
+# accuracy 0.422
+
+# Train: 2.76 Test: 0.06
+```
+
+
+```{r}
+###############################################################################################
+######################################---------GBM-------######################################
+###############################################################################################
+
+### Step 4.2: Train GBM model with training features and responses
+
+#install.packages("gbm")
+
+library(gbm)
+
+base.train.model.start = proc.time()
+
+model_gbm=gbm(lda_class~.,data=lda_data_class,shrinkage = 0.01,distribution = 'multinomial',cv.folds =5, n.trees=3000, verbose = F)
+
+base.train.model.end = proc.time()
+
+print(base.train.model.end - base.train.model.start)
+
+best.iter <- gbm.perf(model_gbm,method='cv')
+
+# best iteration = 1793
+
+summary(model_gbm,best.iter)
+
+base.test.model.start = proc.time()
+
+pred_gbm=predict.gbm(model_gbm,as.data.frame(lda_test_data),n.trees=1975, type="response")
+
+base.test.model.end = proc.time()
+
+print(base.test.model.end - base.test.model.start)
+
+gbm_accu=sum(apply(pred_gbm,1,which.max)==lda_test_class)/500
+
+gbm_accu
+
+
+
+## 0.388
+## Train: 485.12  Test:0.38
+
+```
+
+
+
+```{r}
+###############################################################################################
+###################################---------Adaboost-------####################################
+###############################################################################################
+### Step 4.3: Train Adaboost model with training features and responses
+
+
+base.train.model.start = proc.time()
+
+lda_data_class=lda_data_class%>%
+
+    mutate(lda_class=as.factor(lda_class))
+
+
+ada=boosting(lda_class~.,lda_data_class,boos=T,mfinal=5)
+
+base.train.model.end = proc.time()
+
+print(base.train.model.end - base.train.model.start)
+
+base.test.model.start = proc.time()
+
+pred_ada=predict.boosting(ada,as.data.frame(lda_test_data),newmfinal = 3)
+
+base.test.model.end = proc.time()
+
+print(base.test.model.end - base.test.model.start)
+
+ada_accu=sum(pred_ada$class==lda_test_class)/500
+
+ada_accu
+
+## The accuray of Adaboost is 0.284
+
+## Train: 4.16  Test: 0.05
+
+```
+
+```{r}
+###############################################################################################
+####################################---------SVM-------########################################
+###############################################################################################
+
+### Step 4.5: Train SVM model with training features and responses
+
+library(e1071)
+
+base.train.model.start = proc.time()
+
+model_svm <- svm(lda_class~., data = lda_data_class, kernal = "radial", cost = 1)
+
+base.train.model.end = proc.time()
+
+print(base.train.model.end - base.train.model.start)
+
+base.test.model.start = proc.time()
+
+test.svm.pred <- as.numeric(predict(model_svm, lda_test_data))
+
+base.test.model.end = proc.time()
+
+print(base.test.model.end - base.test.model.start)
+
+svm_accu=mean(test.svm.pred == lda_test_class)
+
+svm_accu
+
+# Accuracy 0.406
+
+# Train: 1.34    Test: 0.14
+```
+
+```{r}
+###############################################################################################
+##################################---------Logistic-------#####################################
+###############################################################################################
+### Step 4.6: Train Logistic model with training features and responses
+
+#install.packages("mlogit")
+
+library(nnet)
+
+base.train.model.start = proc.time()
+
+model_logi=nnet::multinom(lda_class~.,lda_data_class)
+
+base.train.model.end = proc.time()
+
+print(base.train.model.end - base.train.model.start)
+
+base.test.model.start = proc.time()
+
+logi_accu=sum(predict(model_logi,lda_test_data)==lda_test_class)/500
+
+base.test.model.end = proc.time()
+
+print(base.test.model.end - base.test.model.start)
+
+logi_accu
+
+
+## The accuracy of Logistics model is 0.422
+
+## Train 1.90    Test: 0.03
+```
+
+
+```{r}
+###############################################################################################
+###############################---------Random Forest-------###################################
+###############################################################################################
+
+### Step 4.7: Train RF model with training features and responses
+
+#install.packages("randomForest")
+
+library(randomForest)
+
+base.train.model.start = proc.time()
+
+model_rf=randomForest(lda_class~.,lda_data_class,)
+
+base.train.model.end = proc.time()
+
+print(base.train.model.end - base.train.model.start)
+
+base.test.model.start = proc.time()
+
+pred_rf=predict(model_rf,lda_test_data,type="response")
+
+base.test.model.end = proc.time()
+
+print(base.test.model.end - base.test.model.start)
+
+rf_accu=sum(pred_rf==lda_test_class)/500
+
+rf_accu
+
+## The accuracy of random forest is 0.43;
+## Train 2.6 Test: 0.07
+
+```
+
+

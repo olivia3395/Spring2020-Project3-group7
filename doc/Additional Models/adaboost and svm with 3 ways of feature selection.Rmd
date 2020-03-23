@@ -1,0 +1,144 @@
+---
+title: "Untitled"
+author: "nuanjun zhao"
+date: "10/21/2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+load("../output/feature_test.RData")
+load("../output/feature_train.RData")
+```
+
+```{r}
+#the datasets after feature selection using random forest and forward
+load("../output/Forward_features.RData")
+load("../output/RandomForest_features.RData")
+foward.index <- as.numeric(substr(forward_names,8,11))
+rf.index <- as.numeric(substr(rf_names,8,11))
+dat_trainf<-dat_train[foward.index]
+dat_trainf$emotion_idx<-dat_train$emotion_idx
+dat_trainr<-dat_train[rf.index]
+dat_trainr$emotion_idx<-dat_train$emotion_idx
+dat_testf<-dat_test[foward.index]
+dat_testf$emotion_idx<-dat_test$emotion_idx
+dat_testr<-dat_test[rf.index]
+dat_testr$emotion_idx<-dat_test$emotion_idx
+#the datasets after cutting off half face and using pca to reeduce dimension
+load("../output/test_x.RData")
+load("../output/test_y.RData")
+load("../output/train_y.RData")
+load("../output/train_x.RData")
+test<-data.frame(test_x,emotion_idx=test_y)
+train<-data.frame(train_x,emotion_idx=train_y)
+```
+
+```{r}
+# error <- as.numeric()
+# for(i in 1:2){
+# data.adaboost <- boosting(emotion_idx~., data=dat_train_1, mfinal=i)
+# data.pred <- predict.boosting(data.adaboost,newdata = dat_test)
+# error[i] <- data.pred$error
+# }
+# data.pred
+```
+
+
+##Adaboost method:
+```{r}
+library(adabag)
+```
+
+```{r}
+#adaboost method using random forest
+B <- 100
+data.adaboostr <- boosting(emotion_idx~., data=dat_trainr, mfinal=B)
+data.predr <- predict.boosting(data.adaboostr,newdata = dat_testr)
+data.predr1 <- predict.boosting(data.adaboostr,newdata = dat_trainr)
+#training error
+errorr1 <- data.predr1$error
+errorr1
+#testing error
+errorr <- data.predr$error
+errorr
+pred.indr <- as.numeric(rownames(data.predr$confusion))
+data.predr$confusion[order(pred.indr),]
+```
+
+```{r}
+#adaboost method using forward
+B <- 100
+data.adaboostf <- boosting(emotion_idx~., data=dat_trainf, mfinal=B)
+data.predf <- predict.boosting(data.adaboostf,newdata = dat_testf)
+data.predf1 <- predict.boosting(data.adaboostf,newdata = dat_trainf)
+#training error
+errorf1<- data.predf1$error
+errorf1
+#testing error
+errorf <- data.predf$error
+errorf
+pred.indf<- as.numeric(rownames(data.predf$confusion))
+data.predf$confusion[order(pred.indf),]
+```
+
+```{r}
+#adaboost method using half face and pca datasets
+B <- 100
+data.adaboost <- boosting(emotion_idx~., data=train, mfinal=B)
+data.pred <- predict.boosting(data.adaboost,newdata = test)
+data.pred1<- predict.boosting(data.adaboost,newdata = train)
+#training error
+error1 <- data.pred1$error
+error1
+#testing error
+error <- data.pred$error
+error
+pred.ind <- as.numeric(rownames(data.pred$confusion))
+data.pred$confusion[order(pred.ind),]
+```
+
+
+##svm method:
+```{r}
+library(e1071)
+```
+
+```{r}
+#svm method using random forest
+svm.modelr<-svm(emotion_idx~.,data=dat_trainr)
+svm.predr<-predict(svm.modelr,dat_testr)
+svm.predr1<-predict(svm.modelr,dat_trainr)
+svm.predr
+#training accuracy
+mean(svm.predr1==dat_trainr[,dim(dat_trainr)[2]])
+#testing accuracy
+mean(svm.predr==dat_testr[,dim(dat_testr)[2]])
+```
+
+```{r}
+#svm method using forward
+svm.modelf<-svm(emotion_idx~.,data=dat_trainf)
+svm.predf<-predict(svm.modelf,dat_testf)
+svm.predf1<-predict(svm.modelf,dat_trainf)
+svm.predf
+#training accuracy
+mean(svm.predf1==dat_trainf[,dim(dat_trainf)[2]])
+#testing accuracy
+mean(svm.predf==dat_testf[,dim(dat_testf)[2]])
+```
+
+```{r}
+#svm method using half face and pca datasets
+svm.model<-svm(emotion_idx~.,data=train)
+svm.pred<-predict(svm.model,test)
+svm.pred1<-predict(svm.model,train)
+svm.pred
+#training accuracy
+mean(svm.pred1==train[,dim(train)[2]])
+#testing accuracy
+mean(svm.pred==test[,dim(test)[2]])
+```
+
+##Conclusion: For the features selected by random forest and forward methods, we can see the test accuracy is pretty low.
