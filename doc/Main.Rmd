@@ -1,0 +1,634 @@
+---
+title: "Facial Emotion Recognition by PCA and LDA"
+author: "Group 7"
+date: "3/18/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE,error = FALSE)
+```
+
+```{r, message=FALSE, echo=F}
+if(!require("EBImage")){
+  source("https://bioconductor.org/biocLite.R")
+  biocLite("EBImage")
+}
+if(!require("R.matlab")){
+  install.packages("R.matlab")
+}
+if(!require("readxl")){
+  install.packages("readxl")
+}
+
+if(!require("dplyr")){
+  install.packages("dplyr")
+}
+if(!require("readxl")){
+  install.packages("readxl")
+}
+
+if(!require("ggplot2")){
+  install.packages("ggplot2")
+}
+
+if(!require("caret")){
+  install.packages("caret")
+}
+
+if(!require("MASS")){
+  install.packages("MASS")
+}
+
+if(!require("parallel")){
+  install.packages("parallel")
+}
+
+if(!require("data.table")){
+  install.packages("data.table")
+}
+
+if(!require("gbm")){
+  install.packages("gbm")
+}
+
+if(!require("e1071")){
+  install.packages("e1071")
+}
+if(!require("xgboost")){
+  install.packages("xgboost")
+}
+
+if(!require("caret")){
+  install.packages("caret")
+}
+if(!require("caTools")){
+  install.packages("caTools")
+}
+if(!require("kernlab")){
+  install.packages("kernlab")
+}
+if(!require("Matrix")){
+  install.packages("Matrix")
+}
+if(!require("mlr")){
+  install.packages("mlr")
+}
+if(!require("randomForest")){
+  install.packages("randomForest")
+}
+if(!require("purrr")){
+  install.packages("purrr")
+}
+
+library(R.matlab)
+library(readxl)
+library(dplyr)
+library(EBImage)
+library(ggplot2)
+library(caret)
+library(MASS)
+library(data.table)
+library(parallel)
+library(gbm)
+library(e1071)
+library(xgboost)
+library(caret)
+library(caTools)
+library(kernlab)
+library(Matrix)
+library(mlr)
+library(randomForest)
+library(purrr)
+```
+
+## **Step 1: Some preparation**
+
+```{r}
+#getwd()
+setwd("~/Desktop/Spring2020-Project3-ads-spring2020-project3-group7/doc/")
+train_dir <- "../data/train_set/"
+train_image_dir <- paste(train_dir, "images/", sep="")
+train_pt_dir <- paste(train_dir,  "points/", sep="")
+train_label_path <- paste(train_dir, "label.csv", sep="")
+
+run.cv=FALSE # run cross-validation on the training set
+K <- 5  # number of CV folds
+run.feature.train=TRUE # process features for training set
+```
+
+## **Step 2: import data and train-test split**
+
+We splitted the data to 2000 (80%) for training and 500 (20%) for test.
+
+```{r}
+#train-test split
+set.seed(10)
+info <- read.csv(train_label_path)
+n <- nrow(info)
+n_train <- round(n*(4/5), 0)
+train_idx <- sample(info$Index, n_train, replace = F)
+test_idx <- setdiff(info$Index,train_idx)
+```
+
+
+```{r}
+#function to read fiducial points
+#input: index
+#output: matrix of fiducial points corresponding to the index
+n_files <- length(list.files(train_image_dir))
+readMat.matrix <- function(index){
+     return(round(readMat(paste0(train_pt_dir, sprintf("%04d", index), ".mat"))[[1]],0))
+}
+
+#load fiducial points
+fiducial_pt_list <- lapply(1:n_files, readMat.matrix)
+save(fiducial_pt_list, file="../output/fiducial_pt_list.RData")
+```
+
+```{r}
+load("../output/fiducial_pt_list.RData")
+```
+
+
+## **Step 3: baseline model**
+
+### Step 3.1: feature construction
+
+This step is converting 78 fiducial points to distances as 6006 features (3003 horizontal distances and 3003 vertical distances).
+
+The time for training and test feature construction are as below (about 1.5s and 0.1s):
+
+```{r}
+if(run.feature.train){
+  
+  source("../lib/feature.R")
+  base.feature.construction.start = proc.time()
+  tm_feature_train <- NA
+  dat_train_base <- feature(fiducial_pt_list, train_idx)
+  base.feature.construction.train.end = proc.time()
+  
+  tm_feature_test <- NA
+  dat_test_base <- feature(fiducial_pt_list, test_idx)
+  base.feature.construction.test.end = proc.time()
+  
+  #time for training feature construction
+  print(base.feature.construction.train.end - base.feature.construction.start)
+  #time for test feature construction
+  print(base.feature.construction.test.end - base.feature.construction.train.end)
+  
+  save(dat_train_base, file="../output/feature_train_base.RData")
+  save(dat_test_base, file="../output/feature_test_base.RData")
+
+}
+```
+
+
+### Step 3.2: load feature
+
+```{r}
+load("../output/feature_train_base.Rdata")
+load("../output/feature_test_base.Rdata")
+```
+
+### Step 3.3: baseline model: gradient boosting machine
+
+We use gradient boosting machine with stumps for our baseline model. The training dataset is $2000\times6006$ features and an emotion index list with length 2000 of 22 types as response. The time to train the baseline model is as below (about 307s):
+
+```{r}
+#gbm classifier
+base.train.model.start = proc.time()
+baseline=gbm(emotion_idx~. ,data =dat_train_base ,distribution = "multinomial",n.trees = 100,
+             shrinkage = 0.02,n.minobsinnode = 15,cv.folds = 5)
+base.train.model.end = proc.time()
+#time for training the baseline model
+print(base.train.model.end - base.train.model.start)
+```
+
+This is our prediction part for gradient boosting model. The test dataset has the same variables as training data but with only 500 samples. It takes around 9.6s to predict and the test results are as below. The testing accuracy is 43%.
+
+```{r}
+#predict on training data
+baseline.pred.train = predict.gbm(object = baseline,
+                   newdata = dat_train_base,
+                   n.trees = 100,
+                   type = "response")
+#prediction result
+baseline.labels.train = colnames(baseline.pred.train)[apply(baseline.pred.train, 1, which.max)]
+baseline.cm.train = confusionMatrix(dat_train_base$emotion_idx, as.factor(as.numeric(baseline.labels.train)))
+print(baseline.cm.train$byClass[1])
+
+#predict on test data
+base.test.start = proc.time()
+baseline.pred = predict.gbm(object = baseline,
+                   newdata = dat_test_base,
+                   n.trees = 100,
+                   type = "response")
+base.test.end = proc.time()
+#time for testing the baseline model
+print(base.test.end - base.test.start)
+#prediction result
+baseline.labels = colnames(baseline.pred)[apply(baseline.pred, 1, which.max)]
+baseline.cm = confusionMatrix(dat_test_base$emotion_idx, as.factor(as.numeric(baseline.labels)))
+print(baseline.cm$byClass[1])
+print(baseline.cm$table)
+```
+
+### **Step 4: our improved model**
+
+### Step 4.1: construct features and responses
+
+Since people's faces areapproximately symmetric, we can choose only one side of each face to analyze.
+
++ delete the duplicated right face;
++ choose the points on the left side of each face and in the middle of each face;
++ and obtain the features dataset of those chosen points.
++ in the data dataset, calculate the mean of each feature in each emotion group, respectively, in this step, we get a 22 columns data frame, (i,j) means the mean value of feature i in emotion class j;
++ then, if one feature changes very little in different emotions, we can say that this feature is not useful in distinguishing emotions. So, we can delete features that have small variation between emotions;
++ choose certain variation level to delete features: <20% quantile;
++ we delete 379 features.
+
+```{r}
+
+feature.construction.start = proc.time()
+#delete the duplicated right face
+#choose the points on one side of each face and in the middle of each face
+leftmid_idx <- c(1:9,19:26,35:44,50:52,56:59,62,63,64:71)
+fiducial_pt_list_lm <- lapply(fiducial_pt_list, function(mat){return(mat[leftmid_idx,])})
+
+
+
+#let's see the features of these chosen points on every face provided.
+data<-feature(fiducial_pt_list_lm,c(train_idx,test_idx))
+
+#emotion is a vector containing all the unique emotions on the faces provided
+emotion<-unique(data$emotion_idx)
+
+
+
+#1st: in the data dataset, calculate the mean of each feature in each emotion group, respectively;
+#2nd: heihei is a data frame containing the mean of each feature in each emotion.
+heihei<-c()
+library(dplyr)
+for (i in 1:length(emotion)) {
+  datadata<-data %>%
+    filter(emotion_idx==emotion[i]) %>%
+    dplyr::select(-emotion_idx) %>%
+    colMeans()
+  h<-t(as.matrix(datadata))
+  h<-cbind(h,emotion_idx=emotion[i])
+  
+  heihei<-rbind(heihei,h)
+  heihei<-as.data.frame(heihei)
+  
+}
+
+#-------------------------------------------------------------------
+#Then, according to heihei data frame, if one feature changes very little in different emotions, 
+#we can say that this feature is not useful in distinguishing emotions. So, we can delete features 
+#that have small variation between emotions.
+
+feature.var<-map_dbl(heihei[,-ncol(heihei)],function(x) var(x))
+
+
+#the following, I choose certain variation level to delete features: <20% quantile
+
+q<-quantile(feature.var,0.2)
+new_index_20<-which(feature.var<q) #delete these features
+
+#load("../output/new_index(1).RData")
+dup_horiz <- new_index_20
+dup_horiz=as.numeric(dup_horiz)
+#dup_horiz
+```
+
+```{r feature}
+if(run.feature.train){
+
+  source("../lib/feature.R")
+  tm_feature_train <- NA
+  dat_train <- feature(fiducial_pt_list_lm, train_idx)
+  feature.construction.train.end = proc.time()
+  
+  dat_train <- dat_train[,-dup_horiz]
+  feature.construction.train.end = proc.time()
+  
+  tm_feature_test <- NA
+  dat_test <- feature(fiducial_pt_list_lm, test_idx)
+  feature.construction.test.end = proc.time()
+  
+  dat_test <- dat_test[,-dup_horiz]
+  feature.construction.test.end = proc.time()
+  
+  #time for training feature construction
+  print(feature.construction.train.end - feature.construction.start)
+  #time for test feature construction
+  print(feature.construction.test.end - feature.construction.train.end)
+  
+  save(dat_train, file="../output/feature_train.RData")
+  save(dat_test, file="../output/feature_test.RData")
+
+}
+```
+
+###  load features
+
+```{r}
+load("../output/feature_train.RData")
+load("../output/feature_test.RData")
+```
+
+### Step 4.2: PCA dimension reduction
+#### Step 4.2.1: PCA+LDA
+
+#### pca(linear method)
+In this part, we choose principle component analysis(PCA) method to reduce dimension, thus to find the basic elements of the face image distribution, that is, the feature vector of the covariance matrix of the face image sample set, so as to approximate the face image.
+
+```{r}
+n.pca.list <- c(30,50,75,120,150,200)
+dim(dat_train)
+dim(dat_test)
+train.model.start = proc.time()
+
+pca <- prcomp(dat_train[,-1514], cor=T)
+#pca
+train_pca <- data.frame(pca$x[,1:50]) 
+#train_pca
+
+
+pca2=predict(pca,dat_test[,-1514])
+#pca2
+test_pca=data.frame(pca2[, 1:50])
+#test_pca
+
+
+train_index<- dat_train[1514]
+dat_train_pca <- cbind(train_pca, train_index)
+#dat_train_pca
+
+test_index<- dat_test[1514]
+dat_test_pca <- cbind(test_pca, test_index)
+#dat_test_pca
+
+##training time 
+
+lda.model_pca <- lda(emotion_idx ~ ., data=dat_train_pca) 
+train.model.end = proc.time()
+#time for training the model
+print(train.model.end - train.model.start)
+```
+
+#### pca(linear method)
+
+```{r}
+n.pca.list <- c(30,50,80,100,150,200)
+dim(dat_train)
+dim(dat_test)
+
+train_time_pca=function(n.pca.list=n.pca.list){
+for(i in 1:length(n.pca.list)){
+  train.model.start = proc.time()
+pca <- prcomp(dat_train[,-1514], cor=T)
+train_pca <- data.frame(pca$x[,1:n.pca.list[i]]) 
+
+pca2=predict(pca,dat_test[,-1514])
+test_pca=data.frame(pca2[, 1:n.pca.list[i]])
+
+train_index<- dat_train[1514]
+dat_train_pca <- cbind(train_pca, train_index)
+
+test_index<- dat_test[1514]
+dat_test_pca <- cbind(test_pca, test_index)
+
+##training time 
+
+lda.model_pca <- lda(emotion_idx ~ ., data=dat_train_pca) 
+#time for training the model
+train.model.end = proc.time()
+
+#time for testing the model
+test.model.start = proc.time()
+lda.test.pred_pca = predict(lda.model_pca, dat_test_pca[-dim(dat_test_pca)[2]])
+test.model.end = proc.time()
+
+#test accuracy
+test_accuracy=confusionMatrix(lda.test.pred_pca$class, dat_test_pca$emotion_idx)$overall[1]
+
+print(list(l1=train.model.end - train.model.start,
+           l2=test.model.end - test.model.start,
+           l3=test_accuracy))}
+}
+train_time_pca(n.pca.list)
+```
+
+Considering all the results including training time, testing time and accuracy, we choose 50 principle components.
+
+```{r}
+train_pca_final <- data.frame(pca$x[,1:50]) 
+dat_train_pca_final=cbind(train_pca_final, train_index)
+pca2=predict(pca,dat_test[,-1514])
+test_pca_final=data.frame(pca2[, 1:50])
+
+
+dat_test_pca_final=cbind(test_pca_final, test_index)
+dim(dat_test_pca_final)
+
+save(dat_train_pca_final, file="../output/feature_pca_train.RData")
+save(dat_test_pca_final, file="../output/feature_pca_test.RData")
+```
+
+```{r exp_setup}
+run.cv=TRUE # run cross-validation on the training set
+K <- 5  # number of CV folds
+run.feature.train=FALSE # process features for training set
+run.test=TRUE # run evaluation on an independent test set
+run.feature.test=TRUE # process features for test set
+run.feature.test.test=FALSE # process features for test_test set
+```
+
+#### The best parameter with lda model 
+
+The original sample used a 1000×750 size picture to form a 750,000-dimensional feature vector, which contained a lot of redundant information and noise, which led to the inaccuracy of the LDA method. Therefore, PCA dimension reduction is generally used first: PCA dimension reduction is performed on the original sample image, and then LDA is used for classification training; when testing, PCA dimension reduction is also performed on the original image, and then LDA is used for recognition, which can effectively eliminate the interference of redundant information and noise, and the compressed information becomes insensitive to the position of the face.
+
+```{r}
+###############################################################################################
+######################################---------LDA-------######################################
+###############################################################################################
+source("../lib/train_lda.R")
+tm_train=NA
+tm_train <- system.time(fit_train_baseline <- train(dat_train_pca_final, par = NULL))
+save(fit_train_baseline, file="../output/fit_train_baseline_final.RData")
+
+### Train Error
+source("../lib/test_lda.R")
+load("../output/fit_train_baseline_final.RData")
+
+tm_test=NA
+if(run.test){
+  tm_test <- system.time(pred_train <- test(fit_train_baseline, dat_train_pca_final))
+}
+accu <- mean(dat_train_pca_final$emotion_idx == pred_train$class)
+accu
+source("../lib/test_lda.R")
+tm_test=NA
+if(run.test){
+  tm_test <- system.time(pred <- test(fit_train_baseline, dat_test_pca_final))
+}
+
+source("../lib/test_lda.R")
+tm_test_test=NA
+if(run.feature.test.test){
+  load(file="../output/fit_train_baseline_final.RData")
+  tm_test <- system.time(pred <- test(fit_train_baseline, dat_test_selected))
+}
+
+### Evaluation
+accu <- mean(dat_test_pca_final$emotion_idx == pred$class)
+cat("The accuracy of model:", "is", accu*100, "%.\n")
+library(caret)
+#confusionMatrix(as.factor(labels), dat_test_pca_final$emotion_idx)
+ ldatrain.model.start = proc.time()
+lda.model <- lda(emotion_idx ~ ., data=dat_train_pca) 
+ldatrain.model.end = proc.time()
+# #time for training the model
+print(ldatrain.model.end - ldatrain.model.start)
+
+
+### Summarize Running Time
+### Prediction performance matters, 
+### so does the running times for constructing features and for training the model,
+### especially when the computation resource is limited. 
+
+cat("Time for constructing training features=", tm_feature_train[1], "s \n")
+cat("Time for constructing testing features=", tm_feature_test[1], "s \n")
+cat("Time for training model=", tm_train[1], "s \n")
+cat("Time for testing model=", tm_test[1], "s \n")
+```
+
+
+
+#### Step 4.2.2: PCA+SVM
+
+SVM takes into account both empirical risk and structural risk minimization, so it is stable. From a geometric point of view, the stability of the SVM is reflected in the requirement of the largest margin when constructing a hyperplane decision boundary, so there is ample space between the boundary boundaries to accommodate the test samples.
+
+And we already know that SVM has been applied in pattern recognition problems in related fields, including portrait recognition, text classification, handwritten character recognition, etc.
+
+#### Tune the SVM model with cross-validation:
+```{r}
+###############################################################################################
+######################################---------SVM-------######################################
+###############################################################################################
+tm_train=NA
+tm_train <- system.time(tuned_parameters <- tune.svm(emotion_idx~., 
+                                                     data = dat_train_pca_final, 
+                                                     gamma = 10^(-5:-1), 
+                                                     cost = c(30,35,40),
+                                                     tunecontrol = tune.control(cross =12)
+                                                     ))
+summary(tuned_parameters)
+
+```
+
+*Use cross validation to find the best number of PC under SVM model*
+
+
+```{r}
+###############################################################################################
+#####################################---------svm-------#######################################
+###############################################################################################
+
+train_time_svm=function(n.pca.list=n.pca.list){
+
+for(i in 1:length(n.pca.list)){
+  train.model.start = proc.time()
+pca <- prcomp(dat_train[,-1514], cor=T)
+train_pca <- data.frame(pca$x[,1:n.pca.list[i]]) 
+
+pca2=predict(pca,dat_test[,-1514])
+test_pca=data.frame(pca2[, 1:n.pca.list[i]])
+
+train_index<- dat_train[1514]
+dat_train_pca <- cbind(train_pca, train_index)
+
+test_index<- dat_test[1514]
+dat_test_pca <- cbind(test_pca, test_index)
+
+##training time 
+svmtrain.model.start = proc.time()
+svm.model <- svm(emotion_idx~., data = dat_train_pca, kernal = "radial", cost = 1)
+svmtrain.model.end = proc.time()
+#time for training the model
+
+#time for testing the model
+svmtest.model.start = proc.time()
+test.svm.pred <- as.numeric(predict(svm.model, dat_test_pca[-dim(dat_test_pca)[2]]))
+svmtest.model.end = proc.time()
+
+
+#test accuracy
+test_accuracy=mean(test.svm.pred == dat_test_pca$emotion_idx)
+
+print(list(l1=svmtrain.model.end-svmtrain.model.start,
+           l2=svmtest.model.end-svmtest.model.start,
+           l3=test_accuracy))
+}
+}
+
+train_time_svm(n.pca.list)
+```
+
+
+
+*svm training time & svm testing time*
+
+```{r}
+source("../lib/train_svm.R")
+par_best=NULL
+fit_train_final_svm <- train(dat_train_pca_final, tuned_parameters$best.parameters)
+save(fit_train_final_svm, file="../output/fit_train_final.RData")
+
+
+### Train accurancy:
+source("../lib/test_svm.R")
+load("../output/fit_train_final.RData")
+
+if(run.test){
+  pred_train <- test(fit_train_final_svm, dat_train_pca_final)
+}
+accu.train <- mean(dat_train_pca_final$emotion_idx == pred_train)
+accu.train
+# [1] 0.59
+
+### SVM: Run test on test images
+source("../lib/test_svm.R")
+tm_test=NA
+if(run.test){
+  tm_test <- system.time(pred <- test(fit_train_final_svm, dat_test_pca_final))
+}
+
+### SVM: Run test_test on test images
+source("../lib/test_svm.R")
+tm_test=NA
+if(run.test){
+  load(file="../output/fit_train_final.RData")
+  tm_test <- system.time(pred <- test(fit_train_final_svm, dat_test_pca_final))
+}
+
+### evaluation
+accu <- mean(dat_test_pca_final$emotion_idx == pred)
+cat("The accuracy of model:", "is", accu*100, "%.\n")
+library(caret)
+confusionMatrix(pred, dat_test_pca_final$emotion_idx)
+
+### Summarize Running Time
+### Prediction performance matters, 
+### so does the running times for constructing features and for training the model, 
+### especially when the computation resource is limited. 
+cat("Time for training model=", tm_train[1], "s \n")
+cat("Time for testing model=", tm_test[1], "s \n")
+
+```
+
+You can see more methods and more details in doc/Additional Methods file and in Main.rmd file, including adaboost, xgboost, kpca, KSVM etc. 
