@@ -6,15 +6,15 @@
 
 Term: Spring 2020
 
-+ Team ##
++ Team Group 7
 + Team members
-	+ team member 1
-	+ team member 2
-	+ team member 3
-	+ team member 4
-	+ team member 5
+	+ Saier Gong
+	+ Kaiqi Wang
+	+ Yuyao Wang
+	+ Wenjun Yang
+	+ Ziyang Zhang
 
-+ Project summary: In this project, we created a classification engine for facial emotion recognition. 
++ Project summary: In this project, we created a classification engine for facial emotion recognition. The process has two main steps. The first step is to reduce the dimension of features and the next step is to use these reduced "new features" to train a classifier. We tried many different methods to finish this project, including (K)PCA+(K)SVM/xgboost/GBM..., LDA+SVM/xgboost/GBM/KNN, etc. By comparing training time, test time and accuracy, finally we choose the PCA+LDA method as the optimal classifier. 
 	
 **Contribution statement**: ([default](doc/a_note_on_contributions.md)) All team members contributed equally in all stages of this project. All team members approve our work presented in this GitHub repository including this contributions statement. 
 
